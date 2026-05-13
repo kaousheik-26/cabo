@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CABO — Card Game</title>
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0a0e14;--surface:#131922;--surface2:#1a2332;--surface3:#222d3d;
+  --gold:#d4a843;--gold-dim:#8a6d2b;--red:#e74c3c;--green:#2ecc71;--blue:#5dade2;
+  --text:#e8e6e1;--text-dim:#8899aa;--card-w:72px;--card-h:100px;
+}
+html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
+/* ─── Lobby ─── */
+#lobby{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:20px;padding:20px}
+.logo{font-family:'Playfair Display',serif;font-size:5rem;font-weight:900;letter-spacing:.15em;color:var(--gold);text-shadow:0 0 60px rgba(212,168,67,.25)}
+.logo span{color:var(--red)}
+.subtitle{color:var(--text-dim);font-size:.95rem;letter-spacing:.3em;text-transform:uppercase;margin-top:-10px}
+.lobby-box{background:var(--surface);border:1px solid var(--surface3);border-radius:16px;padding:32px;width:min(400px,90vw);display:flex;flex-direction:column;gap:14px}
+.lobby-box h2{font-family:'Playfair Display',serif;color:var(--gold);font-size:1.3rem}
+.lobby-box input{background:var(--surface2);border:1px solid var(--surface3);color:var(--text);padding:12px 16px;border-radius:8px;font-size:1rem;font-family:inherit;outline:none;transition:border .2s}
+.lobby-box input:focus{border-color:var(--gold)}
+.lobby-box input::placeholder{color:var(--text-dim)}
+.btn{padding:12px 24px;border:none;border-radius:8px;font-family:inherit;font-weight:700;font-size:.95rem;cursor:pointer;transition:all .2s;text-transform:uppercase;letter-spacing:.1em}
+.btn-gold{background:var(--gold);color:#0a0e14}.btn-gold:hover{background:#e8bc56;transform:translateY(-1px)}
+.btn-outline{background:transparent;border:1px solid var(--gold);color:var(--gold)}.btn-outline:hover{background:rgba(212,168,67,.1)}
+.btn-red{background:var(--red);color:#fff}.btn-red:hover{background:#ff6b5b}
+.btn-green{background:var(--green);color:#0a0e14}.btn-green:hover{background:#54d98c}
+.btn-blue{background:var(--blue);color:#0a0e14}.btn-blue:hover{background:#85c1e9}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.room-code{font-family:'Playfair Display',serif;font-size:2.5rem;color:var(--gold);letter-spacing:.2em;text-align:center;padding:10px;background:var(--surface2);border-radius:12px}
+.player-list{display:flex;gap:8px;flex-wrap:wrap}
+.player-tag{background:var(--surface2);padding:6px 14px;border-radius:20px;font-size:.85rem;color:var(--text-dim);border:1px solid var(--surface3)}
+.player-tag.host{border-color:var(--gold);color:var(--gold)}
+.error{color:var(--red);font-size:.85rem;min-height:1.2em}
+.tab-row{display:flex;gap:0}
+.tab{flex:1;padding:10px;text-align:center;cursor:pointer;color:var(--text-dim);border-bottom:2px solid transparent;transition:.2s}
+.tab.active{color:var(--gold);border-color:var(--gold)}
+
+/* ─── Game Board ─── */
+#game{display:none;height:100%;flex-direction:column}
+.top-bar{display:flex;align-items:center;justify-content:space-between;padding:10px 20px;background:var(--surface);border-bottom:1px solid var(--surface3)}
+.top-bar .title{font-family:'Playfair Display',serif;font-size:1.2rem;color:var(--gold)}
+.top-bar .room-id{color:var(--text-dim);font-size:.8rem;letter-spacing:.15em}
+.top-bar .round{color:var(--blue);font-size:.85rem;font-weight:700}
+
+.board{flex:1;display:flex;flex-direction:column;position:relative;overflow:hidden}
+
+/* Opponents row */
+.opponents{display:flex;justify-content:center;gap:20px;padding:16px 10px;flex-wrap:wrap}
+.opponent{background:var(--surface);border:1px solid var(--surface3);border-radius:12px;padding:12px 16px;min-width:140px;text-align:center;transition:.3s}
+.opponent.active-turn{border-color:var(--gold);box-shadow:0 0 20px rgba(212,168,67,.15)}
+.opponent.cabo-caller{border-color:var(--red);box-shadow:0 0 20px rgba(231,76,60,.15)}
+.opponent .opp-name{font-weight:700;font-size:.85rem;margin-bottom:8px;color:var(--text-dim)}
+.opponent.active-turn .opp-name{color:var(--gold)}
+.opponent .opp-cards{display:flex;gap:4px;justify-content:center}
+
+/* Center area */
+.center{flex:1;display:flex;align-items:center;justify-content:center;gap:40px}
+.pile{display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;transition:.2s}
+.pile:hover{transform:translateY(-3px)}
+.pile-label{font-size:.75rem;color:var(--text-dim);text-transform:uppercase;letter-spacing:.15em}
+.pile-count{font-size:.7rem;color:var(--text-dim)}
+
+/* Cards */
+.card{width:var(--card-w);height:var(--card-h);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:1.1rem;transition:all .25s;position:relative;cursor:pointer;user-select:none}
+.card-back{background:linear-gradient(135deg,#1a3a5c,#0d2240);border:2px solid #2a4a6c;color:#2a4a6c;box-shadow:inset 0 0 20px rgba(0,0,0,.4)}
+.card-back::after{content:'✦';font-size:1.5rem;opacity:.3}
+.card-face{border:2px solid #ccc;background:linear-gradient(145deg,#fff,#f0ede6);box-shadow:0 2px 12px rgba(0,0,0,.3)}
+.card-face.red{color:var(--red)}.card-face.black{color:#1a1a1a}
+.card-face .rank{font-size:1.3rem;line-height:1}.card-face .suit{font-size:.85rem;margin-top:-2px}
+.card-small{width:42px;height:58px;font-size:.75rem;border-radius:5px}
+.card-small .rank{font-size:.8rem}.card-small .suit{font-size:.55rem}
+
+.card.selected{box-shadow:0 0 0 3px var(--gold),0 0 20px rgba(212,168,67,.3);transform:translateY(-6px)}
+.card.snap-target{box-shadow:0 0 0 3px var(--green),0 0 20px rgba(46,204,113,.3)}
+
+/* My hand */
+.my-area{padding:16px 20px 24px;background:var(--surface);border-top:1px solid var(--surface3)}
+.my-name{font-weight:700;font-size:.85rem;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.my-name .turn-badge{background:var(--gold);color:#0a0e14;padding:2px 10px;border-radius:10px;font-size:.7rem;letter-spacing:.1em}
+.my-cards{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+
+/* Drawn card area */
+.drawn-area{display:flex;align-items:center;justify-content:center;gap:16px;padding:12px;background:rgba(212,168,67,.05);border:1px dashed var(--gold-dim);border-radius:12px;margin:12px 20px}
+.drawn-label{color:var(--gold);font-size:.85rem;font-weight:700}
+.drawn-actions{display:flex;gap:6px}
+
+/* Action bar */
+.action-bar{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;padding:8px 20px}
+
+/* Messages / Log */
+.msg-bar{padding:8px 20px;text-align:center;font-size:.85rem;min-height:36px;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--surface2)}
+.msg-bar.info{color:var(--blue)}.msg-bar.error{color:var(--red)}.msg-bar.success{color:var(--green)}
+.msg-bar.cabo{color:var(--red);font-weight:700;animation:pulse 1s infinite alternate}
+.msg-bar.action{color:var(--gold);font-weight:700}
+.msg-bar.result{color:var(--gold);font-weight:700}
+@keyframes pulse{from{opacity:.7}to{opacity:1}}
+
+/* Peek overlay */
+.peek-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:100;flex-direction:column;gap:16px}
+.peek-card-big{width:120px;height:170px;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:2rem;font-weight:900;background:linear-gradient(145deg,#fff,#f0ede6);border:3px solid var(--gold);box-shadow:0 0 40px rgba(212,168,67,.3);animation:peekIn .3s ease-out}
+.peek-card-big.red{color:var(--red)}.peek-card-big.black{color:#1a1a1a}
+.peek-card-big .suit{font-size:1.4rem}
+.peek-info{color:var(--text);font-size:.95rem}
+@keyframes peekIn{from{transform:scale(.5) rotateY(90deg);opacity:0}to{transform:scale(1) rotateY(0);opacity:1}}
+
+/* Snap modal */
+.snap-modal{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:90}
+.snap-modal-box{background:var(--surface);border:1px solid var(--surface3);border-radius:16px;padding:24px;max-width:350px;width:90vw;text-align:center}
+.snap-modal-box h3{color:var(--gold);font-family:'Playfair Display',serif;margin-bottom:12px}
+.snap-modal-box p{color:var(--text-dim);font-size:.85rem;margin-bottom:16px}
+.snap-cards-row{display:flex;gap:8px;justify-content:center;margin-bottom:16px}
+
+/* Score overlay */
+.score-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.8);display:flex;align-items:center;justify-content:center;z-index:100}
+.score-box{background:var(--surface);border:2px solid var(--gold);border-radius:20px;padding:32px;max-width:500px;width:90vw;text-align:center}
+.score-box h2{font-family:'Playfair Display',serif;color:var(--gold);font-size:1.8rem;margin-bottom:20px}
+.score-row{display:flex;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--surface3);align-items:center}
+.score-row:last-of-type{border:none}
+.score-name{font-weight:700}.score-cards{display:flex;gap:4px}
+.score-total{font-size:1.3rem;font-weight:900;color:var(--gold)}
+.score-penalty{color:var(--red)}
+.score-winner{background:rgba(212,168,67,.1);border-radius:8px}
+
+/* Responsive */
+@media(max-width:600px){
+  .logo{font-size:3rem}
+  .center{gap:20px;flex-direction:row}
+  .card{--card-w:60px;--card-h:84px}
+  .card-small{width:34px;height:48px}
+  .opponents{gap:10px;padding:10px 6px}
+  .opponent{min-width:100px;padding:8px 10px}
+  .drawn-area{flex-direction:column;gap:8px}
+}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- ════════ LOBBY ════════ -->
+<div id="lobby">
+  <div class="logo">CA<span>B</span>O</div>
+  <div class="subtitle">The Card Game</div>
+
+  <div class="lobby-box" id="lobby-entry">
+    <h2>Enter your name</h2>
+    <input id="nameInput" placeholder="Your name" maxlength="16" autofocus>
+    <div class="tab-row">
+      <div class="tab active" data-tab="create" onclick="switchTab('create')">Create Room</div>
+      <div class="tab" data-tab="join" onclick="switchTab('join')">Join Room</div>
+    </div>
+    <div id="tab-create">
+      <button class="btn btn-gold" style="width:100%;margin-top:8px" onclick="createGame()">Create Room</button>
+    </div>
+    <div id="tab-join" class="hidden">
+      <input id="roomInput" placeholder="Room code" maxlength="6" style="text-transform:uppercase;margin-top:8px">
+      <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="joinGame()">Join Room</button>
+    </div>
+    <div class="error" id="lobbyError"></div>
+  </div>
+
+  <div class="lobby-box hidden" id="lobby-room">
+    <h2>Room</h2>
+    <div class="room-code" id="roomCode"></div>
+    <div>
+      <div style="color:var(--text-dim);font-size:.75rem;margin-bottom:6px;text-transform:uppercase;letter-spacing:.15em">Players</div>
+      <div class="player-list" id="playerList"></div>
+    </div>
+    <button class="btn btn-gold" id="startBtn" onclick="startGame()">Start Game</button>
+    <div style="color:var(--text-dim);font-size:.75rem;text-align:center">Share the room code with friends</div>
+  </div>
+</div>
+
+<!-- ════════ GAME ════════ -->
+<div id="game">
+  <div class="top-bar">
+    <div><span class="title">CABO</span> <span class="room-id" id="gameRoomId"></span></div>
+    <div class="round" id="roundInfo"></div>
+  </div>
+  <div class="msg-bar info" id="msgBar">Waiting...</div>
+
+  <div class="board">
+    <div class="opponents" id="opponents"></div>
+
+    <div class="center">
+      <div class="pile" id="deckPile" onclick="drawCard('deck')">
+        <div class="card card-back" style="width:80px;height:112px"></div>
+        <div class="pile-label">Deck</div>
+        <div class="pile-count" id="deckCount"></div>
+      </div>
+      <div class="pile" id="discardPile" onclick="drawCard('discard')">
+        <div class="card card-face" id="discardCard" style="width:80px;height:112px">
+          <div><div class="rank"></div><div class="suit"></div></div>
+        </div>
+        <div class="pile-label">Discard</div>
+      </div>
+    </div>
+
+    <div class="drawn-area hidden" id="drawnArea">
+      <div class="drawn-label">Drawn Card:</div>
+      <div class="card card-face" id="drawnCard" style="width:80px;height:112px">
+        <div><div class="rank"></div><div class="suit"></div></div>
+      </div>
+      <div class="drawn-actions" id="drawnActions"></div>
+    </div>
+  </div>
+
+  <div class="action-bar" id="actionBar"></div>
+
+  <div class="my-area">
+    <div class="my-name"><span id="myName"></span><span class="turn-badge hidden" id="turnBadge">YOUR TURN</span></div>
+    <div class="my-cards" id="myCards"></div>
+  </div>
+</div>
+
+<!-- Peek overlay -->
+<div class="peek-overlay hidden" id="peekOverlay" onclick="closePeek()">
+  <div class="peek-card-big" id="peekCardBig"><div class="rank"></div><div class="suit"></div></div>
+  <div class="peek-info" id="peekInfo"></div>
+  <div style="color:var(--text-dim);font-size:.8rem">Click anywhere to close</div>
+</div>
+
+<!-- Score overlay -->
+<div class="score-overlay hidden" id="scoreOverlay"></div>
+
+<script>
+// ─── Connection ──────────────────────────────────────────────
+const socket = io();
+let state = null;
+let myGameId = null;
+let myName = '';
+let snapMode = null; // null | 'select_opponent_card' | 'select_my_card'
+let snapTarget = null; // {playerIndex, cardIndex}
+
+// ─── Lobby ───────────────────────────────────────────────────
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.getElementById('tab-create').classList.toggle('hidden', tab !== 'create');
+  document.getElementById('tab-join').classList.toggle('hidden', tab !== 'join');
+}
+
+function createGame() {
+  const name = document.getElementById('nameInput').value.trim();
+  if (!name) return showError('Enter your name');
+  myName = name;
+  socket.emit('create_game', { playerName: name }, (res) => {
+    if (res.error) return showError(res.error);
+    myGameId = res.gameId;
+    showRoom();
+  });
+}
+
+function joinGame() {
+  const name = document.getElementById('nameInput').value.trim();
+  const room = document.getElementById('roomInput').value.trim();
+  if (!name) return showError('Enter your name');
+  if (!room) return showError('Enter room code');
+  myName = name;
+  socket.emit('join_game', { gameId: room, playerName: name }, (res) => {
+    if (res.error) return showError(res.error);
+    myGameId = res.gameId;
+    showRoom();
+  });
+}
+
+function showError(msg) { document.getElementById('lobbyError').textContent = msg; }
+
+function showRoom() {
+  document.getElementById('lobby-entry').classList.add('hidden');
+  document.getElementById('lobby-room').classList.remove('hidden');
+  document.getElementById('roomCode').textContent = myGameId;
+}
+
+function startGame() { socket.emit('start_game'); }
+
+// ─── Game state handler ──────────────────────────────────────
+socket.on('game_state', (s) => {
+  state = s;
+  if (s.phase === 'lobby') renderLobby();
+  else { showGameBoard(); render(); }
+});
+
+socket.on('game_message', (msg) => {
+  const bar = document.getElementById('msgBar');
+  bar.textContent = msg.text;
+  bar.className = 'msg-bar ' + (msg.type || 'info');
+});
+
+socket.on('peek_result', (data) => {
+  showPeekOverlay(data.card, data.cardIndex, data.targetPlayerIndex, data.targetName);
+});
+
+function renderLobby() {
+  if (!state) return;
+  const list = document.getElementById('playerList');
+  list.innerHTML = state.players.map((p, i) =>
+    `<div class="player-tag ${i === 0 ? 'host' : ''}">${p.name}${i === 0 ? ' 👑' : ''}</div>`
+  ).join('');
+  const isHost = state.myIndex === 0;
+  document.getElementById('startBtn').style.display = isHost ? '' : 'none';
+}
+
+function showGameBoard() {
+  document.getElementById('lobby').style.display = 'none';
+  document.getElementById('game').style.display = 'flex';
+}
+
+// ─── Render ──────────────────────────────────────────────────
+function render() {
+  if (!state) return;
+
+  document.getElementById('gameRoomId').textContent = state.gameId;
+
+  const turnsPerPlayer = state.players.length > 0 ? Math.floor((state.roundNumber || 0) / state.players.length) + 1 : 1;
+  document.getElementById('roundInfo').textContent = state.phase === 'peek' ? 'PEEK PHASE' :
+    state.phase === 'cabo_round' ? '🚨 CABO ROUND' :
+    state.phase === 'game_over' ? 'GAME OVER' :
+    `Round ${turnsPerPlayer}`;
+
+  // Opponents
+  const opps = document.getElementById('opponents');
+  opps.innerHTML = '';
+  state.players.forEach((p, i) => {
+    if (i === state.myIndex) return;
+    const div = document.createElement('div');
+    div.className = 'opponent' + (p.isCurrentTurn ? ' active-turn' : '') + (p.isCaboCaller ? ' cabo-caller' : '');
+    div.innerHTML = `
+      <div class="opp-name">${p.name}${p.isCaboCaller ? ' 🚨' : ''}${p.isCurrentTurn ? ' ⏳' : ''}</div>
+      <div class="opp-cards">${p.cards.map((c, ci) => renderCardHTML(c, true, `opp-${i}-${ci}`, i, ci)).join('')}</div>
+    `;
+    opps.appendChild(div);
+  });
+
+  // Discard pile
+  const dc = document.getElementById('discardCard');
+  if (state.topDiscard) {
+    dc.innerHTML = `<div><div class="rank">${state.topDiscard.rank}</div><div class="suit">${state.topDiscard.suit}</div></div>`;
+    dc.className = 'card card-face ' + (isRed(state.topDiscard.suit) ? 'red' : 'black');
+    dc.style.width = '80px'; dc.style.height = '112px';
+  } else {
+    dc.innerHTML = '<div style="color:var(--text-dim);font-size:.7rem">Empty</div>';
+    dc.className = 'card card-back'; dc.style.width = '80px'; dc.style.height = '112px';
+  }
+  document.getElementById('deckCount').textContent = `${state.deckCount} cards`;
+
+  // My cards
+  const me = state.players[state.myIndex];
+  document.getElementById('myName').textContent = me.name + (me.isCaboCaller ? ' 🚨' : '');
+  document.getElementById('turnBadge').classList.toggle('hidden', !state.isMyTurn);
+  const myC = document.getElementById('myCards');
+  myC.innerHTML = me.cards.map((c, ci) => renderCardHTML(c, false, `my-${ci}`, state.myIndex, ci)).join('');
+
+  // Drawn card
+  const drawnArea = document.getElementById('drawnArea');
+  if (state.drawnCard && state.isMyTurn) {
+    drawnArea.classList.remove('hidden');
+    const dCard = document.getElementById('drawnCard');
+    dCard.innerHTML = `<div><div class="rank">${state.drawnCard.rank}</div><div class="suit">${state.drawnCard.suit}</div></div>`;
+    dCard.className = 'card card-face ' + (isRed(state.drawnCard.suit) ? 'red' : 'black');
+    dCard.style.width = '80px'; dCard.style.height = '112px';
+
+    const acts = document.getElementById('drawnActions');
+    acts.innerHTML = '';
+    if (state.drawnFrom === 'deck') {
+      acts.innerHTML = `<button class="btn btn-outline" onclick="discardDrawn()">Discard</button>`;
+    }
+    // Swap is done by clicking a card in hand
+  } else {
+    drawnArea.classList.add('hidden');
+  }
+
+  // Action bar
+  const abar = document.getElementById('actionBar');
+  abar.innerHTML = '';
+  if (state.phase === 'playing' && state.isMyTurn && !state.drawnCard && !state.actionPending) {
+    const turnsP = state.players.length > 0 ? Math.floor((state.roundNumber || 0) / state.players.length) : 0;
+    if (turnsP >= 3) {
+      abar.innerHTML = `<button class="btn btn-red" onclick="callCabo()">🚨 Call CABO</button>`;
+    }
+  }
+  if (state.phase === 'cabo_round' && state.isMyTurn && !state.drawnCard && !state.actionPending) {
+    // nothing extra, just draw
+  }
+
+  // Score overlay
+  if (state.phase === 'game_over' && state.scores) {
+    showScoreOverlay();
+  }
+}
+
+function renderCardHTML(card, isSmall, id, playerIndex, cardIndex) {
+  const sizeClass = isSmall ? 'card-small' : '';
+  if (card.faceUp) {
+    const color = isRed(card.suit) ? 'red' : 'black';
+    return `<div class="card card-face ${color} ${sizeClass}" id="${id}"><div><div class="rank">${card.rank}</div><div class="suit">${card.suit}</div></div></div>`;
+  }
+  return `<div class="card card-back ${sizeClass}" id="${id}" onclick="onCardClick(${playerIndex},${cardIndex})" style="cursor:pointer"></div>`;
+}
+
+function isRed(suit) { return suit === '♥' || suit === '♦'; }
+
+// ─── Card interactions ───────────────────────────────────────
+function onCardClick(playerIndex, cardIndex) {
+  if (!state) return;
+
+  // Peek phase
+  if (state.phase === 'peek') {
+    if (playerIndex === state.myIndex && (cardIndex === 2 || cardIndex === 3)) {
+      socket.emit('peek_card', { cardIndex });
+    }
+    return;
+  }
+
+  // Power actions
+  if (state.actionPending) {
+    socket.emit('power_action', { targetPlayerIndex: playerIndex, cardIndex });
+    return;
+  }
+
+  // If we have a drawn card and click our own card → swap
+  if (state.drawnCard && state.isMyTurn && playerIndex === state.myIndex) {
+    socket.emit('swap_card', { cardIndex });
+    return;
+  }
+
+  // Snap own card
+  if (!state.drawnCard && playerIndex === state.myIndex && state.topDiscard && (state.phase === 'playing' || state.phase === 'cabo_round')) {
+    if (confirm(`Snap this card? (Must match ${state.topDiscard.rank} on discard pile)`)) {
+      socket.emit('snap_own', { cardIndex });
+    }
+    return;
+  }
+
+  // Snap opponent card
+  if (!state.drawnCard && playerIndex !== state.myIndex && state.topDiscard && (state.phase === 'playing' || state.phase === 'cabo_round')) {
+    if (snapMode === 'select_my_card' && snapTarget) {
+      // Second click — select which of my cards to give
+      socket.emit('snap_opponent', {
+        targetPlayerIndex: snapTarget.playerIndex,
+        targetCardIndex: snapTarget.cardIndex,
+        myCardIndex: cardIndex,
+      });
+      snapMode = null;
+      snapTarget = null;
+      return;
+    }
+    if (confirm(`Snap ${state.players[playerIndex].name}'s card at pos ${cardIndex + 1}? (Must match ${state.topDiscard.rank})`)) {
+      snapTarget = { playerIndex, cardIndex };
+      snapMode = 'select_my_card';
+      document.getElementById('msgBar').textContent = 'Now click one of YOUR cards to give them in exchange.';
+      document.getElementById('msgBar').className = 'msg-bar action';
+      return;
+    }
+  }
+}
+
+function drawCard(from) {
+  if (!state || !state.isMyTurn || state.drawnCard || state.actionPending) return;
+  if (state.phase !== 'playing' && state.phase !== 'cabo_round') return;
+  socket.emit('draw_card', { from });
+}
+
+function discardDrawn() {
+  socket.emit('discard_drawn');
+}
+
+function callCabo() {
+  if (confirm('Call CABO? Everyone else gets one more turn. If you don\'t have the lowest score, you get 24 points!')) {
+    socket.emit('call_cabo');
+  }
+}
+
+// ─── Peek overlay ────────────────────────────────────────────
+function showPeekOverlay(card, cardIndex, targetPlayerIndex, targetName) {
+  const ov = document.getElementById('peekOverlay');
+  ov.classList.remove('hidden');
+  const big = document.getElementById('peekCardBig');
+  big.className = 'peek-card-big ' + (isRed(card.suit) ? 'red' : 'black');
+  big.innerHTML = `<div class="rank">${card.rank}</div><div class="suit">${card.suit}</div>`;
+  const info = document.getElementById('peekInfo');
+  if (targetName) {
+    info.textContent = `${targetName}'s card at position ${cardIndex + 1} — Value: ${card.value}`;
+  } else {
+    info.textContent = `Your card at position ${cardIndex + 1} — Value: ${card.value}`;
+  }
+}
+
+function closePeek() {
+  document.getElementById('peekOverlay').classList.add('hidden');
+}
+
+// ─── Score overlay ───────────────────────────────────────────
+function showScoreOverlay() {
+  const ov = document.getElementById('scoreOverlay');
+  ov.classList.remove('hidden');
+
+  const scores = state.scores;
+  const minScore = Math.min(...scores.map(s => s.finalScore || s.score));
+
+  let html = `<div class="score-box"><h2>Game Over!</h2>`;
+  // Render each player
+  for (let i = 0; i < state.players.length; i++) {
+    const p = state.players[i];
+    const raw = p.cards.reduce((s, c) => s.value !== undefined ? s + c.value : c.value, 0);
+    // recalc
+    const rawScore = p.cards.map(c => c.value).reduce((a, b) => a + b, 0);
+    const isCabo = state.caboCaller === i;
+
+    // Check if cabo caller penalty
+    const otherScores = state.players.filter((_, j) => j !== state.caboCaller).map(pp => pp.cards.map(c => c.value).reduce((a, b) => a + b, 0));
+    const caboRaw = state.players[state.caboCaller].cards.map(c => c.value).reduce((a, b) => a + b, 0);
+    const caboMin = Math.min(...otherScores);
+    let finalScore = rawScore;
+    if (isCabo && caboRaw >= caboMin) finalScore = 24;
+
+    const isWinner = finalScore <= Math.min(...state.players.map((pp, j) => {
+      const rs = pp.cards.map(c => c.value).reduce((a, b) => a + b, 0);
+      if (j === state.caboCaller && rs >= Math.min(...state.players.filter((_, k) => k !== state.caboCaller).map(ppp => ppp.cards.map(c => c.value).reduce((a, b) => a + b, 0)))) return 24;
+      return rs;
+    }));
+
+    html += `<div class="score-row ${isWinner ? 'score-winner' : ''}">
+      <div class="score-name">${p.name}${isCabo ? ' 🚨' : ''}${isWinner ? ' 👑' : ''}</div>
+      <div class="score-cards">${p.cards.map(c => {
+        const color = isRed(c.suit) ? 'red' : 'black';
+        return `<div class="card card-face card-small ${color}"><div><div class="rank">${c.rank}</div><div class="suit">${c.suit}</div></div></div>`;
+      }).join('')}</div>
+      <div class="score-total ${isCabo && finalScore === 24 ? 'score-penalty' : ''}">${finalScore}${isCabo && finalScore === 24 ? ' (penalty!)' : ''}</div>
+    </div>`;
+  }
+
+  html += `<button class="btn btn-gold" style="margin-top:20px" onclick="restartGame()">Play Again</button></div>`;
+  ov.innerHTML = html;
+}
+
+function restartGame() {
+  document.getElementById('scoreOverlay').classList.add('hidden');
+  socket.emit('restart_game');
+}
+
+// Enter key handlers
+document.getElementById('nameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const joinTab = document.querySelector('.tab[data-tab="join"]');
+    if (joinTab.classList.contains('active')) joinGame(); else createGame();
+  }
+});
+document.getElementById('roomInput')?.addEventListener('keydown', e => { if (e.key === 'Enter') joinGame(); });
+</script>
+</body>
+</html>
